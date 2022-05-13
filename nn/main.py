@@ -24,7 +24,8 @@ class NLM:
         self.n_hidden = hidden_size
         self.n_char_emb = char_emb_size
         self.n_classes = len(char_map)
-        self.device = "cuda:0"
+        # self.device = "cuda:0"
+        self.device = torch.device('cpu')
 
         self.c2i = {c: i for i, c in enumerate(char_map)}
         self.i2c = char_map
@@ -113,9 +114,9 @@ class NLM:
             print("No save.")
 
     def load_model(self):
-        self.char_emb.load_state_dict(torch.load("models/emb"))
-        self.model.load_state_dict(torch.load("models/lstm"))
-        self.final_linear.load_state_dict(torch.load("models/linear"))
+        self.char_emb.load_state_dict(torch.load("models/emb", map_location=self.device))
+        self.model.load_state_dict(torch.load("models/lstm", map_location=self.device))
+        self.final_linear.load_state_dict(torch.load("models/linear", map_location=self.device))
 
     def sample_preds(self, preds, temperature=0.8):
         preds = np.asarray(preds).astype('float64')

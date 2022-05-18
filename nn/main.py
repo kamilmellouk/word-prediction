@@ -1,3 +1,4 @@
+import argparse
 import numpy as np
 import torch
 from torch import nn
@@ -8,114 +9,67 @@ from torch.nn.utils import clip_grad_norm_
 from sklearn.neighbors import NearestNeighbors
 from operator import itemgetter
 from tqdm import tqdm
+import random
 from random import shuffle
 import string
 from os.path import isfile
 
 CHARS = list(" abcdefghijklmnopqrstuvwxyz.'")
-CHARS1 = list(" abcdefghijklmnopqrstuvwxyz'")
-CHARS_CAP = list(" abcdefghijklmnopqrstuvwxyz.'ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-#CHARS = [' ', '’', '—', '–', '“', '”', 'é', '‘'] + list(string.punctuation) + list(string.ascii_letters) + list(string.digits)
+CAP_CHARS = list(" abcdefghijklmnopqrstuvwxyz'ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+ALL_CHARS = [' ', '’', '—', '–', '“', '”', 'é', '‘'] + list(string.punctuation) + list(string.ascii_letters) + list(string.digits)
 
 def softmax(x):
     return np.exp(x) / sum(np.exp(x))
 
 class NLM:
-    def __init__(self, data_filename, size_batch=128, hidden_size=256, char_emb_size=16, char_map=CHARS):
-        #torch.manual_seed(99)
-        #np.random.seed(99)
+    def __init__(self, data_filename, learning_rate = 0.002, model_lower=False, fake_test=False, size_batch=128, hidden_size=256, char_emb_size=16):
+        torch.manual_seed(99)
+        np.random.seed(99)
+        random.seed(99)
         self.filename = data_filename
-        self.vocab_filename = "./data/vocab"
-        self.test_filename = "./data/test"
         self.n_batch = size_batch
         self.n_hidden = hidden_size
         self.n_char_emb = char_emb_size
-        self.n_classes = len(char_map)
+        self.model_lower = model_lower
+        self.fake_test = fake_test
+        model_folder = "./models/"
+        if model_lower:
+            self.CHARS = CHARS
+            self.model_files = [model_folder + f for f in ['emb_low.pt', 'lstm_low.pt', 'linear_low.pt']]
+        else:
+            self.CHARS = ALL_CHARS
+            self.model_files = [model_folder + f for f in ['emb_all.pt', 'lstm_all.pt', 'linear_all.pt']]
+
+        self.n_classes = len(self.CHARS)
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         self.seq_size = 129 # Real sequence size becomes [self.seq_size - 1]
         self.n_train = 1200000 # Total n. of training samples to use
         self.n_mem = 300000 # Max n. of samples to load into memory at once        
 
-        self.c2i = {c: i for i, c in enumerate(char_map)}
-        self.i2c = char_map
-        self.char_emb = nn.Embedding(len(char_map), char_emb_size)
-        self.neigh_model = None
+        self.c2i = {c: i for i, c in enumerate(self.CHARS)}
+        self.i2c = self.CHARS
+        self.char_emb = nn.Embedding(len(self.CHARS), char_emb_size)
         
         self.model = nn.LSTM(input_size=char_emb_size, hidden_size=hidden_size, batch_first=True, num_layers=2, dropout=0.2).to(self.device)
         self.loss_fn = nn.CrossEntropyLoss()
         self.final_linear = nn.Linear(self.n_hidden, self.n_classes).to(self.device)
-        params = list(self.char_emb.parameters()) + list(self.model.parameters()) + list(self.final_linear.parameters())
-        self.optimizer = optim.Adam(params, lr=0.002)
+        self.optimizer = optim.Adam(self.get_params(), lr=learning_rate)
+
+    def get_params(self):
+        return list(self.char_emb.parameters()) + list(self.model.parameters()) + list(self.final_linear.parameters())
 
     def clean_line(self, line):
-        line = line.replace('!', '.')
-        line = line.replace('?', '.')
-        #line = ''.join([c for c in line if (c in CHARS)])
-        line = ''.join([c for c in line.lower() if (c in CHARS)])
+        if self.model_lower:
+            line = ''.join([c for c in line.lower() if (c in self.CHARS)])
+        else:
+            line = ''.join([c for c in line if (c in self.CHARS)])
         return line
 
     def text_gen(self):
         with open(self.filename, encoding='utf8', errors='ignore') as f:
             for line in f:
                 yield self.clean_line(line)
-
-    def clean_line_vocab(self, line):
-        line = ''.join([c for c in line if (c in CHARS_CAP)])
-        return line
-
-    def text_gen_vocab(self):
-        with open(self.filename, encoding='utf8', errors='ignore') as f:
-            for line in f:
-                yield self.clean_line_vocab(line)
-
-    def read_vocab(self):
-        self.vocab = set()
-        if isfile(self.vocab_filename):
-            print("Reading vocab file...", end=" ")
-            with open(self.vocab_filename) as f:
-                for w in f:
-                    self.vocab.add(w.strip())
-
-            print("done.")
-        else:
-            print("Building vocab...", end=" ")
-            text = self.text_gen_vocab()
-            for s in text:
-                for w in s.split():
-                    _w = w
-                    if _w.endswith("''"):
-                        _w = _w[:-2]
-                    if len(_w) >= 2:
-                        if _w.endswith("'") and (_w[-2] != 's'):
-                            _w = _w[:-1]                    
-                    if _w.endswith('...'):
-                        _w = _w[:-3]
-                    if _w.endswith('..'):
-                        _w = _w[:-2]
-                    if _w.endswith('.'):
-                        _w = _w[:-1]
-                    if _w.endswith("'s"):
-                        _w = _w[:-2]
-                    if _w.startswith("'"):
-                        _w = _w[1:]
-
-                    self.vocab.add(_w)
-
-            print("done.")
-            print("Vocab length: %d" % len(self.vocab))
-            print("Write vocab to file? (Y/n):", end=" ")
-            ans = input().strip().lower()
-            if ans == "y":
-                print("Writing...", end=" ")
-                self.write_vocab()
-                print("done.")
-
-
-    def write_vocab(self):
-        with open(self.vocab_filename, 'w+', encoding='utf8') as f:
-            for w in self.vocab:
-                f.write('{}\n'.format(w))
 
     def train_on_batch(self, data, epoch, batch_ind):
         batch_size = self.seq_size * self.n_batch
@@ -134,7 +88,7 @@ class NLM:
             pred = self.final_linear(outputs)
             loss = self.loss_fn(pred.reshape((pred_batch_size, self.n_classes)), y)
             loss.backward()
-            clip_grad_norm_(list(self.char_emb.parameters()) + list(self.model.parameters()) + list(self.final_linear.parameters()), 5)
+            clip_grad_norm_(self.get_params(), 5)
             self.optimizer.step()
 
             if (self.iterations % 200) == 0:
@@ -154,10 +108,8 @@ class NLM:
             tot_count = 0
             dataset = []
             cur_seq = ""
-            sent_count = 0
 
             for s in text:
-                sent_count += 1
                 cur_seq += s + ' '
                 if len(cur_seq) >= self.seq_size:
                     dataset.extend(list(cur_seq[:self.seq_size]))
@@ -172,25 +124,28 @@ class NLM:
                         if tot_count >= self.n_train:
                             break
 
-            print("Num sentences: %d" % sent_count)
+        self.save_model()
 
     def save_model(self):
         print("Save model? (Y/n): ", end="")
         inp = input()
         if inp.lower().strip() == "y":
-            torch.save(self.char_emb.state_dict(), "models/emb_ext_1.pt")
-            torch.save(self.model.state_dict(), "models/lstm_ext_1.pt")
-            torch.save(self.final_linear.state_dict(), "models/linear_ext_1.pt")
+            torch.save(self.char_emb.state_dict(), self.model_files[0])
+            torch.save(self.model.state_dict(), self.model_files[1])
+            torch.save(self.final_linear.state_dict(), self.model_files[2])
             print("Model saved.")
         else:
             print("No save.")
 
     def load_model(self):
-        self.char_emb.load_state_dict(torch.load("models/emb"))
-        self.model.load_state_dict(torch.load("models/lstm"))
-        self.final_linear.load_state_dict(torch.load("models/linear"))
+        self.char_emb.load_state_dict(torch.load(self.model_files[0]))
+        self.model.load_state_dict(torch.load(self.model_files[1]))
+        self.final_linear.load_state_dict(torch.load(self.model_files[2]))
 
-    def sample_preds(self, preds, temperature=0.8):
+    def sample_preds(self, preds, temperature=0.9):
+        """
+            Sample function from Keras. Higher temperature -> more random.
+        """
         preds = np.asarray(preds).astype('float64')
         preds = np.log(preds) / temperature
         exp_preds = np.exp(preds)
@@ -198,18 +153,33 @@ class NLM:
         probas = np.random.multinomial(1, preds, 1)
         return np.argmax(probas)
 
-    def interactive(self):
+    def eval_mode(self):
         self.char_emb.eval()
         self.model.eval()
         self.final_linear.eval()
 
+    def interactive(self):
+        self.eval_mode()
         print("Interactive session started...")
         n_predict = 200
         while True:
             inp = input()
             if inp.strip().lower() == "exit":
                 break
-            inp = list(inp)
+            ok = True
+            for c in inp:
+                if not (c.lower() in self.CHARS):
+                    print("Input not acceptable. List of acceptable input characters:")
+                    print(self.CHARS)
+                    ok = False
+                    break
+            if not ok:
+                continue
+
+            if self.model_lower:
+                inp = list(inp.lower())
+            else:
+                inp = list(inp)
             seq_size = len(inp)
             x_preds = torch.LongTensor(n_predict)
             if seq_size == 0:
@@ -223,7 +193,6 @@ class NLM:
                 outputs, h = self.model(x_emb)
                 pred = self.final_linear(h[0][1, 0, :])
                 probs = softmax(pred.cpu().tolist())
-                #x_preds[0] = torch.argmax(pred)
                 x_preds[0] = self.sample_preds(probs)
 
                 for i in range(1, n_predict):
@@ -231,7 +200,6 @@ class NLM:
                     outputs, h = self.model(x_emb, h)
                     pred = self.final_linear(h[0][1, 0, :])
                     probs = softmax(pred.cpu().tolist())
-                    #x_preds[i] = torch.argmax(pred)
                     x_preds[i] = self.sample_preds(probs)
 
             char_preds = itemgetter(*x_preds.tolist())(self.i2c)
@@ -298,7 +266,10 @@ class NLM:
             last_word = ""
         else:
             last_word = inp_string.split()[-1]
-        inp = list(inp_string.lower())
+        if self.model_lower:
+            inp = list(inp_string.lower())
+        else:
+            inp = list(inp_string)
         seq_size = len(inp)
 
         if seq_size == 0:
@@ -363,46 +334,12 @@ class NLM:
             x_preds, probs2 = self.get_k_probs(x_inds, seq_size, choices=dic)
             words_pred.append(''.join(itemgetter(*x_preds)(self.i2c))[:-1])
 
-        final_preds = []
-        """
-        for i, w in enumerate(words_pred):
-            pred_word = last_word + w
-
-            if not (pred_word[0] == pred_word[0].upper()):
-                cap_pred_word = pred_word[0].upper() + pred_word[1:]
-                rmv_end = 0
-                if pred_word.endswith(".") or pred_word.endswith("'"):
-                    rmv_end = 1
-                if pred_word.endswith("'s") or pred_word.endswith("'."):
-                    rmv_end = 2
-                if pred_word.endswith("'s."):
-                    rmv_end = 3
-
-                if rmv_end > 0:
-                    w_lower = pred_word[:-rmv_end]
-                    w_cap = cap_pred_word[:-rmv_end]
-                else:
-                    w_lower = pred_word
-                    w_cap = cap_pred_word
-
-                capitalize = (w_cap in self.vocab) and not (w_lower in self.vocab)
-                if capitalize:
-                    pred_word = cap_pred_word
-
-            final_preds.append(pred_word)
-            """
-
         final_preds = [last_word + w for w in words_pred]
         final_lengths = [len(w) for w in words_pred]
         return final_preds, final_lengths
 
     def interactive_word_predictor(self):
-        self.char_emb.eval()
-        self.model.eval()
-        self.final_linear.eval()
-
-        #self.read_vocab()
-
+        self.eval_mode()
         print("Interactive word predictor session started...")
 
         while True:
@@ -410,19 +347,22 @@ class NLM:
             if inp_string.strip().lower() == "exit":
                 break
 
-            pred_words, _, _ = self.predictions(inp_string)
+            pred_words, _ = self.predictions(inp_string)
             for w in pred_words[:-1]:
                 print(w, end=" | ")
             print(pred_words[-1])
 
     def clean_line_test(self, line):
-        return (''.join([c for c in line.lower() if (c in CHARS1)])).split()
+        if self.fake_test:
+            return (''.join([c for c in line if (c in CAP_CHARS)])).split()
+        else:
+            return line.split()
 
-    def create_testset(self):
+    def create_testset(self, test_filename):
         start_line = 2101225
         num_lines = 200000
 
-        with open(self.test_filename, 'w+', encoding='utf8') as test_file, open(self.filename, encoding='utf8', errors='ignore') as data_file:
+        with open(test_filename, 'w+', encoding='utf8') as test_file, open(self.filename, encoding='utf8', errors='ignore') as data_file:
             for _ in range(start_line):
                 next(data_file)
             i = 0
@@ -443,15 +383,16 @@ class NLM:
 
         return 0
 
-    def evaluate(self):
-        lines = []
+    def evaluate(self, test_filename):
+        self.eval_mode()
 
-        with open(self.test_filename, encoding='utf8', errors='ignore') as f:
+        lines = []
+        with open(test_filename, encoding='utf8', errors='ignore') as f:
             for line in f:
                 lines.append(self.clean_line_test(line))
 
         shuffle(lines)
-        lines = lines[:600] # Only used 600 samples for now
+        lines = lines[:2000]
 
         tot_saved = 0
         tot_chars = 0
@@ -459,20 +400,26 @@ class NLM:
         for line in tqdm(lines, desc="Evaluating"):
             inp = ' '.join(line)
             pointer = 0
+            start = 0
 
             for i, w in enumerate(line):
                 tot_chars += len(w)
 
                 if i > 0:
-                    saved = self.is_match(w, inp[:pointer])
+                    saved = self.is_match(w, inp[start:pointer])
                     if saved > 0:
                         tot_saved += saved
                         pointer += saved + 1
                         continue
 
-                for char in w:
+                for j, char in enumerate(w):
                     pointer += 1
-                    saved = self.is_match(w, inp[:pointer])
+                    cur_char = char.lower() if self.model_lower else char
+                    if not (cur_char in self.CHARS):
+                        pointer += (len(w) - j - 1)
+                        start = pointer
+                        break
+                    saved = self.is_match(w, inp[start:pointer])
                     if saved > 0:
                         tot_saved += saved
                         pointer += saved
@@ -482,12 +429,34 @@ class NLM:
         
         print("Proportion of saved keystrokes: %.6f" % (tot_saved / tot_chars))
 
-filename = "data/news.2010.en.shuffled"
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='word predictor')
+    parser.add_argument('-lw', '--lower-case', action='store_true',
+                        help='Use lower case model')
+    parser.add_argument('-ld', '--load_model', action='store_true',
+                        help='Load stored model')
+    parser.add_argument('-tr', '--train', action='store_true',
+                        help='Train model')
+    parser.add_argument('-e', '--epochs', default=5, type=int,
+                        help='Number of epochs to train model')
+    parser.add_argument('-ev', '--evaluate', action='store_true',
+                        help='Evaluate model')
+    parser.add_argument('-wp', '--interactive-word-predictor', action='store_true')
+    parser.add_argument('-ft', '--fake-test', action='store_true', help="Evaluate with cleaned test data")
+    parser.add_argument('-tg', '--text-generation', action='store_true', help='Run interactive text generation mode')
+    parser.add_argument('-lr', '--learning-rate', default=0.002, help='Learning rate')
+    parser.add_argument('-f', '--train-file', default="./data/news.2010.en.shuffled", help='Training data filename')
+    parser.add_argument('-tf', '--test-file', default="./data/test", help='Test data filename')
+    args = parser.parse_args()
 
-nlm = NLM(filename)
-nlm.load_model()
-#nlm.train(5)
-#nlm.interactive()
-#nlm.interactive_word_predictor()
-#nlm.save_model()
-nlm.evaluate()
+    nlm = NLM(args.train_file, fake_test=args.fake_test, learning_rate=args.learning_rate, model_lower=args.lower_case)
+    if args.load_model:
+        nlm.load_model()
+    if args.train:
+        nlm.train(args.epochs)
+    if args.text_generation:
+        nlm.interactive()
+    if args.interactive_word_predictor:
+        nlm.interactive_word_predictor()
+    if args.evaluate:
+        nlm.evaluate(args.test_file)

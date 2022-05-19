@@ -94,13 +94,13 @@ class TrigramPredictor:
             if prev_options:
                 options = prev_options.get(self.w2i.get(w1, -1), None)
                 if options:
-                    predictions = [self.i2w[i] for (i, p) in options if self.i2w[i][:len(w0)] == w0][:3]      
+                    predictions = [self.i2w[i] for (i, _) in options if self.i2w[i][:len(w0)] == w0][:3]      
         elif w1 and not w2:
             options = self.bigram_prob.get(self.w2i.get(w1, -1), None)
             if options:
-                predictions = [self.i2w[i] for (i, p) in options if self.i2w[i][:len(w0)] == w0][:3]
+                predictions = [self.i2w[i] for (i, _) in options if self.i2w[i][:len(w0)] == w0][:3]
         else:
-            predictions = [self.i2w[i] for (i, p) in self.unigram_count if self.i2w[i][:len(w0)] == w0][:3]
+            predictions = [self.i2w[i] for (i, _) in self.unigram_count if self.i2w[i][:len(w0)] == w0][:3]
         
         return predictions
 

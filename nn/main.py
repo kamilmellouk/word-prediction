@@ -35,10 +35,10 @@ class NLM:
         model_folder = "./models/"
         if model_lower:
             self.CHARS = CHARS
-            self.model_files = [model_folder + f for f in ['emb_low.pt', 'lstm_low.pt', 'linear_low.pt']]
+            self.model_files = [model_folder + f for f in ['blog_emb_low.pt', 'blog_lstm_low.pt', 'blog_linear_low.pt']]
         else:
             self.CHARS = ALL_CHARS
-            self.model_files = [model_folder + f for f in ['emb_all.pt', 'lstm_all.pt', 'linear_all.pt']]
+            self.model_files = [model_folder + f for f in ['blog_emb_all.pt', 'blog_lstm_all.pt', 'blog_linear_all.pt']]
 
         self.n_classes = len(self.CHARS)
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -71,10 +71,10 @@ class NLM:
             for line in f:
                 yield self.clean_line(line)
 
-    def train_on_batch(self, data, epoch, batch_ind):
+    def train_on_batch(self, data, epoch):
         batch_size = self.seq_size * self.n_batch
         pred_batch_size = (self.seq_size-1) * self.n_batch
-        for i in tqdm(range(batch_size, len(data), batch_size), desc="Epoch %d (%d/%d)" % (epoch, batch_ind, self.tot_batches)):
+        for i in tqdm(range(batch_size, len(data), batch_size), desc="Epoch %d" % epoch):
             batch = data[i - batch_size:i]
 
             batch_inds = torch.LongTensor(itemgetter(*batch)(self.c2i)).reshape((self.n_batch, self.seq_size))
@@ -98,31 +98,20 @@ class NLM:
 
 
     def train(self, epochs):
-        self.tot_batches = self.n_train // self.n_mem
         self.iterations = 0
 
-        for epoch in range(epochs):
-            text = self.text_gen()
-            count = 0
-            cur_batch = 0
-            tot_count = 0
-            dataset = []
-            cur_seq = ""
+        text = self.text_gen()
+        dataset = []
+        cur_seq = ""
 
-            for s in text:
-                cur_seq += s + ' '
-                if len(cur_seq) >= self.seq_size:
-                    dataset.extend(list(cur_seq[:self.seq_size]))
-                    cur_seq = ""
-                    count += 1
-                    if count == self.n_mem:
-                        cur_batch += 1
-                        self.train_on_batch(dataset, epoch+1, cur_batch)
-                        dataset.clear()
-                        tot_count += count
-                        count = 0
-                        if tot_count >= self.n_train:
-                            break
+        for s in text:
+            cur_seq += s + ' '
+            if len(cur_seq) >= self.seq_size:
+                dataset.extend(list(cur_seq[:self.seq_size]))
+                cur_seq = ""
+
+        for epoch in range(epochs):
+            self.train_on_batch(dataset, epoch+1)
 
         self.save_model()
 
@@ -266,6 +255,7 @@ class NLM:
             last_word = ""
         else:
             last_word = inp_string.split()[-1]
+
         if self.model_lower:
             inp = list(inp_string.lower())
         else:
@@ -354,23 +344,24 @@ class NLM:
 
     def clean_line_test(self, line):
         if self.fake_test:
-            return (''.join([c for c in line if (c in CAP_CHARS)])).split()
+            return (''.join([c for c in line if (c in CAP_CHARS)])).split()[:20]
         else:
-            return line.split()
+            return line.split()[:20]
 
-    def create_testset(self, test_filename):
-        start_line = 2101225
-        num_lines = 200000
+    def create_datasets(self, new_train_filename, new_test_filename):
+        num_lines_test = 20000
 
-        with open(test_filename, 'w+', encoding='utf8') as test_file, open(self.filename, encoding='utf8', errors='ignore') as data_file:
-            for _ in range(start_line):
-                next(data_file)
-            i = 0
+        with open(new_train_filename, 'w+', encoding='utf8') as train_file, open(new_test_filename, 'w+', encoding='utf8') as test_file, open(self.filename, encoding='utf8', errors='ignore') as data_file:
+            all_lines = []
             for line in data_file:
+                all_lines.append(line)
+
+            shuffle(all_lines)
+            for line in all_lines[:num_lines_test]:
                 test_file.write(line)
-                i += 1
-                if i == num_lines:
-                    break
+
+            for line in all_lines[num_lines_test:]:
+                train_file.write(line)
 
     def is_match(self, w, inp):
         """
@@ -445,8 +436,8 @@ if __name__ == '__main__':
     parser.add_argument('-ft', '--fake-test', action='store_true', help="Evaluate with cleaned test data")
     parser.add_argument('-tg', '--text-generation', action='store_true', help='Run interactive text generation mode')
     parser.add_argument('-lr', '--learning-rate', default=0.002, help='Learning rate')
-    parser.add_argument('-f', '--train-file', default="./data/news.2010.en.shuffled", help='Training data filename')
-    parser.add_argument('-tf', '--test-file', default="./data/test", help='Test data filename')
+    parser.add_argument('-f', '--train-file', default="./data/train.txt", help='Training data filename')
+    parser.add_argument('-tf', '--test-file', default="./data/test.txt", help='Test data filename')
     args = parser.parse_args()
 
     nlm = NLM(args.train_file, fake_test=args.fake_test, learning_rate=args.learning_rate, model_lower=args.lower_case)

@@ -1,0 +1,17 @@
+News 2010 dataset:
+Test data containing only upper- and lowercase letters, "'", and space character:
+ - Lower case model: 55.7360%
+ - All case model: 54.8314%
+
+Test data containing raw input:
+ - Lower case model: 46.8166%
+ - All case model: 53.0962%
+
+Blog dataset:
+Test data containing only upper- and lowercase letters, "'", and space character:
+ - Lower case model: 54.1303%
+ - All case model: 51.4415%
+
+Test data containing raw input:
+ - Lower case model: 45.7397%
+ - All case model: 50.1877%

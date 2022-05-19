@@ -84,16 +84,6 @@ class TrigramTrainer(object):
         for line in self.text_gen(f):
             for token in line:
                 self.process_token(token)
-        # with codecs.open(f, 'r', 'utf-8') as text_file:
-        #     # TODO: capitalization?
-        #     text = reader = str(text_file.read()).lower()
-        # try :
-        #     self.tokens = nltk.word_tokenize(text) # Important that it is named self.tokens for the --check flag to work
-        # except LookupError :
-        #     nltk.download('punkt')
-        #     self.tokens = nltk.word_tokenize(text)
-        # for token in tqdm(self.tokens, desc="Processing tokens"):
-        #     self.process_token(token)
 
     def text_gen(self, f):
         with open(f, encoding='utf8', errors='ignore') as f:
@@ -189,7 +179,7 @@ def main():
     
     if arguments.destination:
         stats = trigram_trainer.stats()
-        with codecs.open(arguments.destination, 'w', 'utf-8' ) as f:
+        with codecs.open('./models/' + arguments.destination, 'w', 'utf-8' ) as f:
             for row in stats: f.write(row + '\n')
 
 

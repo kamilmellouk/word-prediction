@@ -22,7 +22,7 @@ def softmax(x):
     return np.exp(x) / sum(np.exp(x))
 
 class NLM:
-    def __init__(self, data_filename, learning_rate = 0.002, model_lower=False, fake_test=False, size_batch=128, hidden_size=256, char_emb_size=16):
+    def __init__(self, data_filename, learning_rate = 0.002, model_news=False, model_lower=False, fake_test=False, size_batch=128, hidden_size=256, char_emb_size=16):
         torch.manual_seed(99)
         np.random.seed(99)
         random.seed(99)
@@ -35,17 +35,21 @@ class NLM:
         model_folder = "./models/"
         if model_lower:
             self.CHARS = CHARS
-            self.model_files = [model_folder + f for f in ['blog_emb_low.pt', 'blog_lstm_low.pt', 'blog_linear_low.pt']]
+            if model_news:
+                self.model_files = [model_folder + f for f in ['news_emb_low.pt', 'news_lstm_low.pt', 'news_linear_low.pt']]
+            else:
+                self.model_files = [model_folder + f for f in ['blog_emb_low.pt', 'blog_lstm_low.pt', 'blog_linear_low.pt']]
         else:
             self.CHARS = ALL_CHARS
-            self.model_files = [model_folder + f for f in ['blog_emb_all.pt', 'blog_lstm_all.pt', 'blog_linear_all.pt']]
+            if model_news:
+                self.model_files = [model_folder + f for f in ['news_emb_all.pt', 'news_lstm_all.pt', 'news_linear_all.pt']]
+            else:
+                self.model_files = [model_folder + f for f in ['blog_emb_all.pt', 'blog_lstm_all.pt', 'blog_linear_all.pt']]
 
         self.n_classes = len(self.CHARS)
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         self.seq_size = 129 # Real sequence size becomes [self.seq_size - 1]
-        self.n_train = 1200000 # Total n. of training samples to use
-        self.n_mem = 300000 # Max n. of samples to load into memory at once        
 
         self.c2i = {c: i for i, c in enumerate(self.CHARS)}
         self.i2c = self.CHARS
@@ -434,13 +438,14 @@ if __name__ == '__main__':
                         help='Evaluate model')
     parser.add_argument('-wp', '--interactive-word-predictor', action='store_true')
     parser.add_argument('-ft', '--fake-test', action='store_true', help="Evaluate with cleaned test data")
+    parser.add_argument('-news', '--train_news', action='store_true', help="Whether to use model trained on news")
     parser.add_argument('-tg', '--text-generation', action='store_true', help='Run interactive text generation mode')
     parser.add_argument('-lr', '--learning-rate', default=0.002, help='Learning rate')
     parser.add_argument('-f', '--train-file', default="./data/train.txt", help='Training data filename')
-    parser.add_argument('-tf', '--test-file', default="./data/test.txt", help='Test data filename')
+    parser.add_argument('-tf', '--test-file', default="./data/test_blog.txt", help='Test data filename')
     args = parser.parse_args()
 
-    nlm = NLM(args.train_file, fake_test=args.fake_test, learning_rate=args.learning_rate, model_lower=args.lower_case)
+    nlm = NLM(args.train_file, model_news=args.train_news, fake_test=args.fake_test, learning_rate=args.learning_rate, model_lower=args.lower_case)
     if args.load_model:
         nlm.load_model()
     if args.train:

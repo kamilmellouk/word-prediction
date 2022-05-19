@@ -29,7 +29,7 @@ class TrigramPredictor:
         # The total number of words in the training corpus.
         self.total_words = 0
 
-        self.lower = False
+        self.lower = True
 
         self.CHARS = list(" abcdefghijklmnopqrstuvwxyz.'")
         self.CAP_CHARS = list(" abcdefghijklmnopqrstuvwxyz'ABCDEFGHIJKLMNOPQRSTUVWXYZ")
@@ -50,38 +50,29 @@ class TrigramPredictor:
                 self.unique_words, self.total_words = map(int, metadata[:2])
                 self.lower = metadata[2]
 
-                print(' unigrams')
                 for i in range(self.unique_words):
                     index, word, count = f.readline().strip().split()
-
                     self.w2i[word] = int(index)
                     self.i2w[i] = word
                     self.unigram_count[i] = int(count)
-                
                 self.unigram_count = sorted(self.unigram_count.items(), key=lambda x: x[1], reverse=True)
 
                 f.readline()
-                print(' bigrams')
+
                 for line in f:
                     if line.strip() == "-2":
                         break
-
                     i, j, log_p = line.strip().split()
                     self.bigram_prob[int(i)][int(j)] = float(log_p)
-
                 for i in self.bigram_prob.keys():
                     # sort in reverse to get decreasing probabilities
                     self.bigram_prob[i] = sorted(self.bigram_prob[i].items(), key=lambda x: x[1], reverse=True)
                 
-
-                print(' trigrams')
                 for line in f:
                     if line.strip() == "-3":
                         break
-
                     i, j, k, log_p = line.strip().split()
                     self.trigram_prob[int(i)][int(j)][int(k)] = float(log_p)
-
                 for i, w1 in self.trigram_prob.items():
                     for j, w2 in w1.items():
                         # sort in reverse to get decreasing probabilities
@@ -94,6 +85,7 @@ class TrigramPredictor:
     
     def predict(self, w0 = "", w1 = None, w2 = None):
         """
+        Gives the top 3 predictions from the model given, if available, the current word and the previous two
         """
         predictions = []
 
@@ -102,13 +94,11 @@ class TrigramPredictor:
             if prev_options:
                 options = prev_options.get(self.w2i.get(w1, -1), None)
                 if options:
-                    predictions = [self.i2w[i] for (i, p) in options if self.i2w[i][:len(w0)] == w0][:3]
-                    
+                    predictions = [self.i2w[i] for (i, p) in options if self.i2w[i][:len(w0)] == w0][:3]      
         elif w1 and not w2:
             options = self.bigram_prob.get(self.w2i.get(w1, -1), None)
             if options:
                 predictions = [self.i2w[i] for (i, p) in options if self.i2w[i][:len(w0)] == w0][:3]
-
         else:
             predictions = [self.i2w[i] for (i, p) in self.unigram_count if self.i2w[i][:len(w0)] == w0][:3]
         
@@ -172,23 +162,21 @@ class TrigramPredictor:
 
     def compute_keystrokes(self, test_filename):
         saved = 0
-        total_predictions = 0
+        total = 0
 
-        print('computing the average number of saved keystrokes')
-        for line in tqdm(self.text_gen(test_filename), desc="   Evaluating", total=2000):
+        for line in tqdm(self.text_gen(test_filename), desc="computing proportion of saved keystrokes", total=2000):
             for i, w in enumerate(line):
-
                 w1 = line[i-1] if i >= 1 else None
                 w2 = line[i-2] if i >= 2 else None
 
                 saved += self.check_predictions(w0=w, w1=w1, w2=w2)
-                total_predictions += 1
+                total += len(w)
 
-                for j, c in enumerate(w):
+                for j in range(len(w)):
                     saved += self.check_predictions(w0=w[:j], w1=w1, w2=w2)
-                    total_predictions += 1
+                    total += len(w)
         
-        print("average number of saved keystrokes: %.6f" % (saved / total_predictions))
+        print("proportion of saved keystrokes: %.6f" % (saved / total))
 
 def main():
     """
@@ -197,7 +185,7 @@ def main():
     parser = argparse.ArgumentParser(description='Word Predictor')
     parser.add_argument('--interactive', '-i', action='store_true')
     parser.add_argument('--model', '-m', type=str,  default='blogs_ls.txt', help='file with language model')
-    parser.add_argument('--keystrokes', '-k', type=str, required=False, help='input a test file to compute the average number of saevd keystrokes on')
+    parser.add_argument('--keystrokes', '-k', type=str, required=False, help='input a test file to compute the average number of saved keystrokes on')
     arguments = parser.parse_args()
 
     predictor = TrigramPredictor()

@@ -1,0 +1,18 @@
+Proportion of saved keystrokes
+
+blogs training data - blog test data - no smoothing - no lowercase: 36.60%
+blogs training data - blog test data - laplace smoothing - no lowercase: 36.60%
+blogs training data - blog test data - no smoothing - only lowercase: 43.24%
+
+blogs training data - news test data - no smoothing - no lowercase: 25.66%
+blogs training data - news test data - laplace smoothing - no lowercase: 25.66%
+blogs training data - news test data - no smoothing - only lowercase: 26.42%
+
+
+news training data - news test data - no smoothing - no lowercase: 31.63%
+news training data - news test data - laplace smoothing - no lowercase: 31.63%
+news training data - news test data - no smoothing - only lowercase: 31.76%
+
+news training data - blogs test data - no smoothing - no lowercase: 26.28%
+news training data - blogs test data - laplace smoothing - no lowercase: 26.29%
+news training data - blogs test data - no smoothing - only lowercase: 26.58%

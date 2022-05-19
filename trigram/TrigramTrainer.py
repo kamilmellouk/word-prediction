@@ -2,48 +2,110 @@
 from __future__ import unicode_literals
 import math
 import argparse
+import string
 import nltk
 import os
 from collections import defaultdict
 import codecs
 import json
 import requests
-import tqdm
+from tqdm import tqdm
 
 """
 This file is a modified version of the BigramTrainer.py script from the course DD1418/DD2418 Language engineering at KTH.
 Original file created in 2017 by Johan Boye and Patrik Jonell.
 Modified in 2022 by Kamil Mellouk
 """
-
-
 class TrigramTrainer(object):
     """
     This class constructs a trigram language model from a corpus.
     """
 
+    def __init__(self, laplace=False, lowercase=False):
+        """
+        Constructor. Processes the file f and builds a language model from it.
+
+        :param f: The training file.
+        """
+        # The mapping from words to identifiers.
+        self.w2i = {}
+
+        # The mapping from identifiers to words.
+        self.i2w = {}
+
+        # An array holding the unigram counts.
+        self.unigram_count = defaultdict(int)
+
+        # An array holding the bigram counts.
+        self.bigram_count = defaultdict(lambda: defaultdict(int))
+
+        # An array holding the trigram counts.
+        self.trigram_count = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
+
+        # The identifier of the previous i2w processed.
+        self.last_index = -1
+
+        # The identifier of the before-last i2w processed
+        self.before_last_index = -1
+
+        # Number of unique words (i2w forms) in the training corpus.
+        self.unique_words = 0
+
+        # The total number of words in the training corpus.
+        self.total_words = 0
+
+        # Indicates whether to apply Laplace smothing to the n-gram probabilities
+        self.laplace_smoothing = laplace
+
+        self.lower = lowercase
+
+        self.CHARS = list(" abcdefghijklmnopqrstuvwxyz.'")
+        self.CAP_CHARS = list(" abcdefghijklmnopqrstuvwxyz'ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        self.ALL_CHARS = [' ', '’', '—', '–', '“', '”', 'é', '‘'] + list(string.punctuation) + list(string.ascii_letters) + list(string.digits)
+
+
+    def clean_line(self, line):
+        dirty = line.split(" ")
+        cleaned = []
+        for w in dirty:
+            if self.lower:
+                if all([c in self.CHARS for c in w]):
+                    cleaned.append(w)
+            else:
+                if all([c in self.CAP_CHARS for c in w]):
+                    cleaned.append(w)
+
+        return cleaned
+
     def process_files(self, f):
         """
-        Processes the file @code{f}.
+        Processes the file f
         """
-        with codecs.open(f, 'r', 'utf-8') as text_file:
-            # TODO: capitalization?
-            text = reader = str(text_file.read()).lower()
-        try :
-            self.tokens = nltk.word_tokenize(text) # Important that it is named self.tokens for the --check flag to work
-        except LookupError :
-            nltk.download('punkt')
-            self.tokens = nltk.word_tokenize(text)
-        for token in self.tokens:
-            self.process_token(token)
+        for line in self.text_gen(f):
+            for token in line:
+                self.process_token(token)
+        # with codecs.open(f, 'r', 'utf-8') as text_file:
+        #     # TODO: capitalization?
+        #     text = reader = str(text_file.read()).lower()
+        # try :
+        #     self.tokens = nltk.word_tokenize(text) # Important that it is named self.tokens for the --check flag to work
+        # except LookupError :
+        #     nltk.download('punkt')
+        #     self.tokens = nltk.word_tokenize(text)
+        # for token in tqdm(self.tokens, desc="Processing tokens"):
+        #     self.process_token(token)
 
+    def text_gen(self, f):
+        with open(f, encoding='utf8', errors='ignore') as f:
+            for line in f:
+                yield self.clean_line(line)
 
     def process_token(self, token):
         """
-        Processes one i2w in the training corpus, and adjusts the unigram,
+        Processes one word in the training corpus, and adjusts the unigram,
         bigram and trigram counts.
 
-        :param token: The current i2w to be processed.
+        :param token: The current word to be processed.
         """
         # process new words
         if token in self.w2i.keys():
@@ -78,82 +140,35 @@ class TrigramTrainer(object):
 
     def stats(self):
         """
-        Creates a list of rows to print of the language model.
-
+        Creates a list of rows to print from the language model.
         """
-        rows_to_print = []
-
-        # print metadata
-        rows_to_print.append(str(self.unique_words) + ' ' + str(self.total_words))
-
-        print("unigram")
-        # print unigram counts
-        for i, w in self.i2w.items():
-            rows_to_print.append(str(i) + ' ' + w + ' ' + str(self.unigram_count.get(i)))
-        rows_to_print.append("-1")
-
-        print("bigram")
-        # print bigram counts
-        for i, w1 in self.bigram_count.items():
-            for j, w2 in w1.items():
-                if w2 != 0:
-                    rows_to_print.append(
-                        str(i) + ' ' + str(j) + ' ' +
-                        "%.15f" % math.log(w2 / self.unigram_count[i])
-                    )
-        rows_to_print.append("-2")
-
-        print("trigram")
-        # print trigram counts
-        for i, w1 in self.trigram_count.items():
-            for j, w2 in w1.items():
-                for k, w3 in w2.items():
-                    if k in self.trigram_count[i][j] and self.trigram_count[i][j][k] != 0:
-                        rows_to_print.append(
-                            str(i) + ' ' + str(j) + ' ' + str(k) + ' ' +
-                            "%.15f" % math.log(w3 / self.unigram_count[i])
-                        )
-        rows_to_print.append("-3")
+        rows, bigrams, trigrams = [], [], []
         
+        rows.append(str(self.unique_words) + ' ' + str(self.total_words) + ' ' + str(self.laplace_smoothing)) # print metadata
 
-        return rows_to_print
+        for i, w1 in tqdm(self.i2w.items(), desc="Saving model"):
+            c1 = self.unigram_count[i]
+            rows.append(str(i) + ' ' + w1 + ' ' + str(c1))
+
+            for j, c2 in self.bigram_count[i].items():
+                prob = (c2 + 1)/(c1 + self.unique_words) if self.laplace_smoothing else c2/c1
+                bigrams.append(str(i) + ' ' + str(j) + ' ' + "%.15f" % math.log(prob))
+
+                for k, c3 in self.trigram_count[i][j].items():
+                    prob = (c3 + 1)/(c2 + self.unique_words) if self.laplace_smoothing else c3/c2
+                    trigrams.append(str(i) + ' ' + str(j) + ' ' + str(k) + ' ' + "%.15f" % math.log(prob))
+        rows.append("-1") # mark end of unigrams
+
+        for row in bigrams:
+            rows.append(row)
+        rows.append("-2") # mark end of bigrams
+
+        for row in trigrams:
+            rows.append(row)
+        rows.append("-3") # mark end of trigrams and file
+        
+        return rows
     
-
-    def __init__(self):
-        """
-        Constructor. Processes the file f and builds a language model from it.
-
-        :param f: The training file.
-        """
-        # The mapping from words to identifiers.
-        self.w2i = {}
-
-        # The mapping from identifiers to words.
-        self.i2w = {}
-
-        # An array holding the unigram counts.
-        self.unigram_count = defaultdict(int)
-
-        # An array holding the bigram counts.
-        self.bigram_count = defaultdict(lambda: defaultdict(int))
-
-        # An array holding the trigram counts.
-        self.trigram_count = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
-
-        # The identifier of the previous i2w processed.
-        self.last_index = -1
-
-        # The identifier of the before-last i2w processed
-        self.before_last_index = -1
-
-        # Number of unique words (i2w forms) in the training corpus.
-        self.unique_words = 0
-
-        # The total number of words in the training corpus.
-        self.total_words = 0
-
-        self.laplace_smoothing = False
-
 
 def main():
     """
@@ -162,17 +177,17 @@ def main():
     parser = argparse.ArgumentParser(description='TrigramTrainer')
     parser.add_argument('--file', '-f', type=str, help='file from which to build the language model')
     parser.add_argument('--destination', '-d', type=str, help='file in which to store the language model')
+    parser.add_argument('--laplace', '-ls', action=argparse.BooleanOptionalAction, help='apply Laplace smoothing')
+    parser.add_argument('--lowercase', '-lc', action=argparse.BooleanOptionalAction, help='only lowercase characters')
 
     arguments = parser.parse_args()
 
-    trigram_trainer = TrigramTrainer()
+    trigram_trainer = TrigramTrainer(arguments.laplace, arguments.lowercase)
 
     if arguments.file:
-        print("processing text...")
         trigram_trainer.process_files(arguments.file)
     
     if arguments.destination:
-        print("saving model...")
         stats = trigram_trainer.stats()
         with codecs.open(arguments.destination, 'w', 'utf-8' ) as f:
             for row in stats: f.write(row + '\n')

@@ -1,6 +1,7 @@
 import argparse
 import codecs
 from collections import defaultdict
+from tqdm import tqdm
 
 class TrigramPredictor:
 
@@ -37,11 +38,9 @@ class TrigramPredictor:
 
         try:
             with codecs.open(filename, 'r', 'utf-8') as f:
-                self.unique_words, self.total_words = map(int, f.readline().strip().split())
+                self.unique_words, self.total_words = map(int, f.readline().strip().split()[:2])
 
-                print("reading unigram probabilities...")
-                # read unigram probabilities
-                for i in range(self.unique_words):
+                for i in tqdm(range(self.unique_words), desc="Reading unigrams"):
                     index, word, count = f.readline().strip().split()
 
                     self.w2i[word] = int(index)
@@ -49,13 +48,10 @@ class TrigramPredictor:
                     self.unigram_count[i] = int(count)
                 
                 self.unigram_count = sorted(self.unigram_count.items(), key=lambda x: x[1], reverse=True)
-                # print(self.unigram_count)
 
                 f.readline()
 
-                print("reading bigram probabilities...")
-                # read bigram probabilities
-                for line in f:
+                for line in tqdm(f, desc="Reading bigrams"):
                     if line.strip() == "-2":
                         break
 
@@ -64,13 +60,10 @@ class TrigramPredictor:
 
                 for i in self.bigram_prob.keys():
                     # sort in reverse to get decreasing probabilities
-                    self.bigram_prob[i] = sorted(self.bigram_prob[i].items(), key=lambda x: x[1], reverse=False)
+                    self.bigram_prob[i] = sorted(self.bigram_prob[i].items(), key=lambda x: x[1], reverse=True)
                 
-                # print(self.bigram_prob)
 
-                print("reading trigram probabilities...")
-                # read trigram probabilities
-                for line in f:
+                for line in tqdm(f, desc="Reading trigrams"):
                     if line.strip() == "-3":
                         break
 
@@ -80,7 +73,7 @@ class TrigramPredictor:
                 for i, w1 in self.trigram_prob.items():
                     for j, w2 in w1.items():
                         # sort in reverse to get decreasing probabilities
-                        self.trigram_prob[i][j] = sorted(self.trigram_prob[i][j].items(), key=lambda x: x[1], reverse=False)
+                        self.trigram_prob[i][j] = sorted(self.trigram_prob[i][j].items(), key=lambda x: x[1], reverse=True)
                 
                 return True
         except IOError:
@@ -97,15 +90,15 @@ class TrigramPredictor:
             if prev_options:
                 options = prev_options.get(self.w2i[w1], None)
                 if options:
-                    possible_words = [(self.i2w[i], p) for (i, p) in options if self.i2w[i][:len(w0)] == w0][:3]
+                    possible_words = [self.i2w[i] for (i, p) in options if self.i2w[i][:len(w0)] == w0][:3]
                     
         elif w1 and not w2:
             options = self.bigram_prob.get(self.w2i[w1], None)
             if options:
-                possible_words = [(self.i2w[i], p) for (i, p) in options if self.i2w[i][:len(w0)] == w0][:3]
+                possible_words = [self.i2w[i] for (i, p) in options if self.i2w[i][:len(w0)] == w0][:3]
 
         else:
-            possible_words = [(self.i2w[i], p) for (i, p) in self.unigram_count if self.i2w[i][:len(w0)] == w0][:3]
+            possible_words = [self.i2w[i] for (i, p) in self.unigram_count if self.i2w[i][:len(w0)] == w0][:3]
         
         return possible_words
 
@@ -126,22 +119,20 @@ class TrigramPredictor:
 
             words = inp_string.strip().split()
             seq_size = len(words)
-
-            words_pred = []
-
             if seq_size == 0:
                 continue
-            elif seq_size == 1:
-                words_pred = self.predict(w0=last_word)
-            elif seq_size == 2:
-                words_pred = self.predict(w0=last_word, w1=words[0])
-            else:
-                words_pred = self.predict(w0=last_word, w1=words[seq_size-2], w2=words[seq_size-3])
 
-            print(words_pred)
-            # for w in words_pred:
-            #     print(last_word + w, end=" | ")
-            # print(last_word + words_pred[-1])
+            words_pred = []
+            w1 = words[seq_size-2] if seq_size >= 2 else None
+            w2 = words[seq_size-3] if seq_size >= 3 else None
+
+            words_pred = self.predict(w0=last_word, w1=w1, w2=w2)
+
+
+            l = len(words_pred)
+            for i in range(l-1):
+                print(words_pred[i], end=' | ')
+            print(words_pred[l-1])
 
 def main():
     """

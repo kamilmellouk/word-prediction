@@ -3,7 +3,6 @@ import numpy as np
 import torch
 from torch import nn
 import torch.optim as optim
-import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader, random_split
 from torch.nn.utils import clip_grad_norm_
 from sklearn.neighbors import NearestNeighbors
@@ -131,9 +130,9 @@ class NLM:
             print("No save.")
 
     def load_model(self):
-        self.char_emb.load_state_dict(torch.load(self.model_files[0]))
-        self.model.load_state_dict(torch.load(self.model_files[1]))
-        self.final_linear.load_state_dict(torch.load(self.model_files[2]))
+        self.char_emb.load_state_dict(torch.load(self.model_files[0], map_location=self.device))
+        self.model.load_state_dict(torch.load(self.model_files[1], map_location=self.device))
+        self.final_linear.load_state_dict(torch.load(self.model_files[2], map_location=self.device))
 
     def sample_preds(self, preds, temperature=0.9):
         """

@@ -32,9 +32,30 @@ Download the data, here are the two datasets we used:
 
 ### Neural networks
 
-Inside the `nn/` folder, run
-`python3 main.py`
+Inside the `nn/` folder, run the following to manually test the prediction of a model:
+```
+python3 main.py [-ld] [-lw] [-news] -wp
+```
 and you will be able to start typing words/sentences. Whenever you press enter, the program will output 3 predictions for the current word, or the next one if your input ends with a whitespace. Input exit if you wish to end the program.
+The flags in parentheses are optional and mean:
+`-ld`: to load existing model
+`-lw`: to use lower-case model
+`-news`: to use model trained on news dataset (default is blog post model)
+
+Inside the `nn/` folder, run the following to train an lstm model:
+```
+python3 main.py [-ld] -tr [-lw] [-f "train_file"] [-e number]
+```
+where:
+`-f`: path to training file (default "./data/train.txt")
+`-e`: number of epochs (default 5)
+
+Inside the `nn/` folder, run the following to evaluate an lstm model:
+```
+python3 main.py [-ld] [-lw] [-tf "test_file"] [-news] -ev
+```
+where:
+`-tf`: path to test file
 
 ### Trigram model
 

@@ -437,7 +437,6 @@ if __name__ == '__main__':
     parser.add_argument('-ev', '--evaluate', action='store_true',
                         help='Evaluate model')
     parser.add_argument('-wp', '--interactive-word-predictor', action='store_true')
-    parser.add_argument('-ft', '--fake-test', action='store_true', help="Evaluate with cleaned test data")
     parser.add_argument('-news', '--train_news', action='store_true', help="Whether to use model trained on news")
     parser.add_argument('-tg', '--text-generation', action='store_true', help='Run interactive text generation mode')
     parser.add_argument('-lr', '--learning-rate', default=0.002, help='Learning rate')
@@ -445,7 +444,7 @@ if __name__ == '__main__':
     parser.add_argument('-tf', '--test-file', default="./data/test_blog.txt", help='Test data filename')
     args = parser.parse_args()
 
-    nlm = NLM(args.train_file, model_news=args.train_news, fake_test=args.fake_test, learning_rate=args.learning_rate, model_lower=args.lower_case)
+    nlm = NLM(args.train_file, model_news=args.train_news, fake_test=True, learning_rate=args.learning_rate, model_lower=args.lower_case)
     if args.load_model:
         nlm.load_model()
     if args.train:
